@@ -1,6 +1,6 @@
-// ===== CodyChat Seat System - RealTime Server =====
+// ===== CodyChat Realtime Server =====
 // Author: Saif & ChatGPT
-// Version: 1.0 (for Render Deployment)
+// Version: 2.0 (Seats + Voice Chat)
 
 import express from "express";
 import { Server } from "socket.io";
@@ -11,98 +11,72 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// إنشاء سيرفر HTTP وSocket.io
+// إنشاء Http Server + Socket.io
 const server = http.createServer(app);
+
 const io = new Server(server, {
-  cors: {
-    origin: "*", // ممكن تحدد "https://ra7ra.site" لو عايز تأمين أكتر
-    methods: ["GET", "POST"]
-  }
+    cors: {
+        origin: "*",
+        methods: ["GET", "POST"]
+    }
 });
 
-// 🟢 عند اتصال مستخدم
+// --------------------------------------------------------
+// 🟢 عند اتصال مستخدم جديد
+// --------------------------------------------------------
 io.on("connection", (socket) => {
-  console.log("🟢 User connected:", socket.id);
+    console.log("🟢 User connected:", socket.id);
 
-  // المستخدم ينضم لغرفة معينة
-  socket.on("join_room", (roomId) => {
-    socket.join(`room_${roomId}`);
-    console.log(`👥 User ${socket.id} joined room ${roomId}`);
-  });
+    // ====================================================
+    // =============== 1) RealTime Seat System =============
+    // ====================================================
 
-  // المستخدم يخرج
-  socket.on("disconnect", () => {
-    console.log("🔴 User disconnected:", socket.id);
-  });
-});
+    socket.on("join_room", (roomId) => {
+        socket.join(`room_${roomId}`);
+        console.log(`👥 User ${socket.id} joined seat room ${roomId}`);
+    });
 
-// 🔔 استقبال التحديثات من PHP
-// PHP هيبعت هنا POST request لما يتغير مقعد
-app.post("/seatUpdate", (req, res) => {
-  const data = req.body;
+    // ====================================================
+    // =============== 2) Voice Chat System ================
+    // ====================================================
 
-  if (!data.room_id) {
-    return res.status(400).json({ error: "room_id is required" });
-  }
-
-  console.log(`📢 Seat update from PHP → Room ${data.room_id}`, data);
-
-  // إرسال التحديث لكل المستخدمين في نفس الغرفة
-  io.to(`room_${data.room_id}`).emit("seat_update", data);
-
-  res.json({ status: "ok" });
-});
-
-// 🔧 نقطة اختبار بسيطة
-app.get("/", (req, res) => {
-  res.send("✅ CodyChat Realtime Server Running Successfully!");
-});
-
-// Render يوفّر PORT في متغير بيئي
-const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => console.log(`🚀 Socket.io server running on port ${PORT}`));
-io.on("connection", (socket) => {
-    console.log("Client connected:", socket.id);
-
-    // ==== Voice Join Room ====
     socket.on("voice:joinRoom", ({ roomId, userId }) => {
         socket.join("voice_room_" + roomId);
         socket.data.roomId = roomId;
         socket.data.userId = userId;
 
-        // رجعله الناس في الغرفة (بدون نفسه)
+        // رجّع للمستخدم الموجودين في الغرفة
         const clients = [...io.sockets.sockets.values()]
-            .filter(s => s.data && s.data.roomId == roomId && s.data.userId && s.id !== socket.id)
+            .filter(s => s.data?.roomId == roomId && s.id !== socket.id)
             .map(s => ({ userId: s.data.userId }));
 
         socket.emit("voice:usersInRoom", clients);
     });
 
-    // لما حد يشغّل المايك ويطلب peers
     socket.on("voice:requestPeers", ({ roomId, userId }) => {
         const clients = [...io.sockets.sockets.values()]
-            .filter(s => s.data && s.data.roomId == roomId && s.data.userId && s.id !== socket.id)
+            .filter(s => s.data?.roomId == roomId && s.id !== socket.id)
             .map(s => ({ userId: s.data.userId }));
 
         socket.emit("voice:peers", { users: clients });
     });
 
-    // تمرير الـ Offer
+    // الـ Offer
     socket.on("voice:offer", ({ toUserId, fromUserId, sdp }) => {
         forwardToUser(toUserId, "voice:offer", { fromUserId, sdp });
     });
 
-    // تمرير الـ Answer
+    // الـ Answer
     socket.on("voice:answer", ({ toUserId, fromUserId, sdp }) => {
         forwardToUser(toUserId, "voice:answer", { fromUserId, sdp });
     });
 
-    // تمرير ICE
+    // ICE Candidate
     socket.on("voice:iceCandidate", ({ toUserId, fromUserId, candidate }) => {
         forwardToUser(toUserId, "voice:iceCandidate", { fromUserId, candidate });
     });
 
-    // Mic ON/OFF (لو حابب تستخدمهم بس لتغيير الأيقونة)
+    // Mic Status
     socket.on("voice:micOn", ({ roomId, userId }) => {
         io.to("voice_room_" + roomId).emit("voice:micOn", { userId });
     });
@@ -111,21 +85,62 @@ io.on("connection", (socket) => {
         io.to("voice_room_" + roomId).emit("voice:micOff", { userId });
     });
 
+    // الخروج
     socket.on("disconnect", () => {
         const roomId = socket.data?.roomId;
         const userId = socket.data?.userId;
+
+        console.log("🔴 User disconnected:", socket.id);
+
         if (roomId && userId) {
             io.to("voice_room_" + roomId).emit("voice:userLeft", { userId });
         }
     });
 
-    // دالة مساعدة عشان نبعث لمستخدم معين حسب userId
+    // ====================================================
+    // دالة إرسال لأي مستخدم حسب userId
+    // ====================================================
     function forwardToUser(targetUserId, event, payload) {
         for (const [id, s] of io.sockets.sockets) {
-            if (s.data && s.data.userId == targetUserId) {
+            if (s.data?.userId == targetUserId) {
                 s.emit(event, payload);
                 break;
             }
         }
     }
 });
+
+
+// --------------------------------------------------------
+// 📬 استقبال seatUpdate من PHP
+// --------------------------------------------------------
+app.post("/seatUpdate", (req, res) => {
+    const data = req.body;
+
+    if (!data.room_id) {
+        return res.status(400).json({ error: "room_id is required" });
+    }
+
+    console.log(`📢 Seat update received from PHP → Room ${data.room_id}`);
+
+    io.to(`room_${data.room_id}`).emit("seat_update", data);
+
+    res.json({ status: "ok" });
+});
+
+
+// --------------------------------------------------------
+// صفحة اختبار
+// --------------------------------------------------------
+app.get("/", (req, res) => {
+    res.send("✅ CodyChat Realtime Server Running Successfully!");
+});
+
+
+// --------------------------------------------------------
+// تشغيل السيرفر على Render
+// --------------------------------------------------------
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () =>
+    console.log(`🚀 Socket.io server running on port ${PORT}`)
+);
