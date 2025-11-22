@@ -48,7 +48,6 @@ io.on("connection", (socket) => {
 // 2) نظام الصوت الكامل — النسخة المحسّنة
 // ----------------------------------------------------
 socket.on("voice:joinRoom", ({ roomId, userId }) => {
-
     socket.join("voice_room_" + roomId);
 
     socket.data.roomId = roomId;
@@ -61,25 +60,15 @@ socket.on("voice:joinRoom", ({ roomId, userId }) => {
         isSpeaker: false
     });
 
-    // المتحدثين الحاليين
+    // قائمة المتحدثين الحاليين فقط
     const speakers = [...users.entries()]
         .filter(([_, u]) => u.roomId == roomId && u.isSpeaker === true)
-        .map(([id]) => ({ userId: id }));
+        .map(([id, _]) => ({ userId: id }));
 
-    // إرسال قائمة المتحدثين للعضو الجديد
-    socket.emit("voice:speakerList", { speakers });
-// أبلغ جميع المتحدثين أن مستمع جديد دخل
-speakers.forEach(s => {
-    io.to(users.get(s.userId).socketId).emit("voice:newListener", {
-        listenerId: userId
-    });
+    // إرسال القائمة للعضو الجديد
+    socket.emit("voice:usersInRoom", { speakers });
 });
 
-    // إعلام جميع الـ speakers أن هناك عضو جديد
-    speakers.forEach(s => {
-        forward(s.userId, "voice:forceConnect", { targetId: userId });
-    });
-});
 
     // ----------------------------------------------------
     // طلب الاتصال من speaker للناس الموجودة
