@@ -60,15 +60,21 @@ socket.on("voice:joinRoom", ({ roomId, userId }) => {
         isSpeaker: false
     });
 
-    // قائمة المتحدثين الحاليين فقط
-    const speakers = [...users.entries()]
-        .filter(([_, u]) => u.roomId == roomId && u.isSpeaker === true)
-        .map(([id, _]) => ({ userId: id }));
+    // كل المتحدثين الحاليين في نفس الغرفة
+    const speakersFull = [...users.entries()]
+        .filter(([id, u]) => u.roomId == roomId && u.isSpeaker === true);
 
-    // إرسال القائمة للعضو الجديد
+    // نبعتهالوه عشان يعملوا listen لهم
+    const speakers = speakersFull.map(([id]) => ({ userId: id }));
     socket.emit("voice:usersInRoom", { speakers });
-});
 
+    // 🔥 خلي كل المتحدثين يفتحوا اتصال مع العضو الجديد
+    speakersFull.forEach(([speakerId, u]) => {
+        io.to(u.socketId).emit("voice:newListener", {
+            userId   // اليوزر الجديد اللي لسه داخل
+        });
+    });
+});
 
     // ----------------------------------------------------
     // طلب الاتصال من speaker للناس الموجودة
