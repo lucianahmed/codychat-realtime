@@ -68,6 +68,12 @@ socket.on("voice:joinRoom", ({ roomId, userId }) => {
 
     // إرسال قائمة المتحدثين للعضو الجديد
     socket.emit("voice:speakerList", { speakers });
+// أبلغ جميع المتحدثين أن مستمع جديد دخل
+speakers.forEach(s => {
+    io.to(users.get(s.userId).socketId).emit("voice:newListener", {
+        listenerId: userId
+    });
+});
 
     // إعلام جميع الـ speakers أن هناك عضو جديد
     speakers.forEach(s => {
