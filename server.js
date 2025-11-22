@@ -44,29 +44,36 @@ io.on("connection", (socket) => {
     });
 
     // ----------------------------------------------------
-    // 2) نظام الصوت الكامل
-    // ----------------------------------------------------
-    socket.on("voice:joinRoom", ({ roomId, userId }) => {
-        socket.join("voice_room_" + roomId);
+// ----------------------------------------------------
+// 2) نظام الصوت الكامل — النسخة المحسّنة
+// ----------------------------------------------------
+socket.on("voice:joinRoom", ({ roomId, userId }) => {
 
-        socket.data.roomId = roomId;
-        socket.data.userId = userId;
+    socket.join("voice_room_" + roomId);
 
-        // حفظ المستخدم في الذاكرة
-        users.set(userId, {
-            roomId,
-            socketId: socket.id,
-            isSpeaker: false
-        });
+    socket.data.roomId = roomId;
+    socket.data.userId = userId;
 
-        // قائمة المتحدثين الحاليين فقط
-        const speakers = [...users.entries()]
-            .filter(([_, u]) => u.roomId == roomId && u.isSpeaker === true)
-            .map(([id, _]) => ({ userId: id }));
-
-        // إرسال القائمة للعضو الجديد
-        socket.emit("voice:usersInRoom", { speakers });
+    // حفظ المستخدم في الذاكرة
+    users.set(userId, {
+        roomId,
+        socketId: socket.id,
+        isSpeaker: false
     });
+
+    // المتحدثين الحاليين
+    const speakers = [...users.entries()]
+        .filter(([_, u]) => u.roomId == roomId && u.isSpeaker === true)
+        .map(([id]) => ({ userId: id }));
+
+    // إرسال قائمة المتحدثين للعضو الجديد
+    socket.emit("voice:speakerList", { speakers });
+
+    // إعلام جميع الـ speakers أن هناك عضو جديد
+    speakers.forEach(s => {
+        forward(s.userId, "voice:forceConnect", { targetId: userId });
+    });
+});
 
     // ----------------------------------------------------
     // طلب الاتصال من speaker للناس الموجودة
